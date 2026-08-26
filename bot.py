@@ -11,7 +11,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums import ParseMode
 
 # ===== НАСТРОЙКИ =====
-BOT_TOKEN = "8836390065:AAGHrl26Sz5k-zgswXwgNNlIe4Xaqjn2ta0"  # Замени на свой токен!
+BOT_TOKEN = "8836390065:AAgHr126Sz5k-zgsxWxgNN1Ie4Xaqjn2ta0"  # Замени на свой токен!
 
 # ===== ИНИЦИАЛИЗАЦИЯ =====
 bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
