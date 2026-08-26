@@ -12,7 +12,7 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
 # ===== НАСТРОЙКИ =====
-BOT_TOKEN = "8836390065:AAGHrl26Sz5k-zgswXwgNNlIe4Xaqjn2ta0"
+BOT_TOKEN = "8836390065:AAgHr126Sz5k-zgsxWxgNN1Ie4Xaqjn2ta0"
 
 # ===== ИНИЦИАЛИЗАЦИЯ =====
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -29,24 +29,40 @@ class CaptchaState(StatesGroup):
 # ===== ХРАНИЛИЩЕ ДАННЫХ ПОЛЬЗОВАТЕЛЕЙ =====
 user_data = {}
 
-# ===== СПИСОК ЭМОДЗИ =====
-EMOJIS = ["😀", "😁", "😂", "🤣", "😊", "😍", "🥰", "😘", "😗", "😙", "😚", "🙂", "🤗", "🤩", "🤔", "🤨", "😐", "😑", "😶", "🙄", "😏", "😣", "😥", "😮", "🤐", "😯", "😪", "😫", "😴", "😌", "😛", "😜", "😝", "🤤", "😒", "😓", "😔", "😕", "🙃", "🤑", "😲", "☹️", "🙁", "😖", "😞", "😟", "😤", "😢", "😭", "😦", "😧", "😨", "😩", "🤯", "😬", "😰", "😱", "🥵", "🥶", "😳", "🤪", "😵", "😡", "😠", "🤬"]
+# ===== СПИСОК ЭМОДЗИ ПО КАТЕГОРИЯМ =====
+EMOJIS = {
+    "фрукты": ["🍎", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍒", "🍑", "🥭", "🍍", "🥝"],
+    "животные": ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮"],
+    "транспорт": ["🚗", "🚕", "🚙", "🚌", "🚎", "🏎️", "🚓", "🚑", "🚒", "🚐", "🛻", "🚚"],
+    "еда": ["🍕", "🍔", "🍟", "🌭", "🥪", "🌮", "🌯", "🥙", "🧆", "🥚", "🍳", "🥞"],
+    "природа": ["🌺", "🌸", "🌷", "🌻", "🌹", "🌿", "☘️", "🍀", "🌳", "🌲", "🌵", "🌴"],
+    "спорт": ["⚽", "🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🏓", "🏸"],
+    "техника": ["💻", "🖥️", "⌨️", "🖱️", "📱", "📲", "💿", "📀", "🎮", "🕹️", "📷", "📹"]
+}
 
 def generate_captcha():
-    target_emoji = random.choice(EMOJIS)
-    other_emojis = [e for e in EMOJIS if e != target_emoji]
+    # Выбираем случайную категорию
+    category = random.choice(list(EMOJIS.keys()))
+    emojis = EMOJIS[category]
+    
+    # Выбираем целевой смайлик
+    target_emoji = random.choice(emojis)
+    
+    # Выбираем 3 случайных разных смайлика из этой же категории
+    other_emojis = [e for e in emojis if e != target_emoji]
     random.shuffle(other_emojis)
     options = [target_emoji] + other_emojis[:3]
     random.shuffle(options)
     
+    # Клавиатура КУБОМ (2 ряда по 2 кнопки)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=options[0], callback_data=f"captcha_{options[0]}")],
-        [InlineKeyboardButton(text=options[1], callback_data=f"captcha_{options[1]}")],
-        [InlineKeyboardButton(text=options[2], callback_data=f"captcha_{options[2]}")],
-        [InlineKeyboardButton(text=options[3], callback_data=f"captcha_{options[3]}")]
+        [InlineKeyboardButton(text=options[0], callback_data=f"captcha_{options[0]}"), 
+         InlineKeyboardButton(text=options[1], callback_data=f"captcha_{options[1]}")],
+        [InlineKeyboardButton(text=options[2], callback_data=f"captcha_{options[2]}"), 
+         InlineKeyboardButton(text=options[3], callback_data=f"captcha_{options[3]}")]
     ])
     
-    return target_emoji, keyboard
+    return target_emoji, keyboard, category
 
 def get_user_state(user_id: int):
     if user_id not in user_data:
@@ -61,6 +77,7 @@ def get_user_state(user_id: int):
 async def cmd_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     user_state = get_user_state(user_id)
+    username = message.from_user.username or message.from_user.first_name
     
     if user_state["blocked_until"] and datetime.now() < user_state["blocked_until"]:
         remaining = (user_state["blocked_until"] - datetime.now()).seconds // 60
@@ -81,14 +98,16 @@ async def cmd_start(message: types.Message, state: FSMContext):
         user_state["attempts"] = 0
         user_state["blocked_until"] = None
     
-    target_emoji, keyboard = generate_captcha()
+    target_emoji, keyboard, category = generate_captcha()
     await state.set_state(CaptchaState.waiting_for_captcha)
     await state.update_data(target_emoji=target_emoji, attempts=user_state["attempts"])
     
     await message.answer(
-        f"🔐 <b>Пожалуйста, пройдите капчу</b>\n\n"
-        f"Найдите и выберите этот смайлик: <b>{target_emoji}</b>\n\n"
-        f"⚠️ У вас осталось попыток: <b>{3 - user_state['attempts']}</b>",
+        f"👋 <b>Привет, @{username}!</b>\n\n"
+        f"🔐 <b>Пройдите капчу для работы с ботом</b>\n\n"
+        f"Выберите кнопку с этим смайликом: <b>{target_emoji}</b>\n"
+        f"<i>(категория: {category})</i>\n\n"
+        f"⚠️ Попыток осталось: <b>{3 - user_state['attempts']}</b>",
         reply_markup=keyboard
     )
 
@@ -110,7 +129,11 @@ async def process_captcha(callback: types.CallbackQuery, state: FSMContext):
         user_state["attempts"] = 0
         user_state["blocked_until"] = None
         await callback.message.delete()
-        await callback.message.answer("✅ <b>Отлично! Капча пройдена!</b>\n\n🤖 Бот теперь полностью работает.")
+        await callback.message.answer(
+            "✅ <b>Отлично! Капча пройдена!</b>\n\n"
+            "🤖 Бот теперь полностью работает.\n"
+            "Можете писать любые сообщения!"
+        )
         await state.clear()
         await callback.answer("✅ Капча пройдена!", show_alert=True)
         return
@@ -132,12 +155,14 @@ async def process_captcha(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("⛔ Вы заблокированы на 15 минут!", show_alert=True)
         return
     
-    target_emoji, keyboard = generate_captcha()
+    target_emoji, keyboard, category = generate_captcha()
     await state.update_data(target_emoji=target_emoji, attempts=attempts)
     await callback.message.edit_text(
         f"❌ <b>Неверно! Попробуйте еще раз.</b>\n\n"
-        f"Найдите и выберите этот смайлик: <b>{target_emoji}</b>\n\n"
-        f"⚠️ У вас осталось попыток: <b>{3 - attempts}</b>",
+        f"🔐 <b>Пройдите капчу для работы с ботом</b>\n\n"
+        f"Выберите кнопку с этим смайликом: <b>{target_emoji}</b>\n"
+        f"<i>(категория: {category})</i>\n\n"
+        f"⚠️ Попыток осталось: <b>{3 - attempts}</b>",
         reply_markup=keyboard
     )
     await callback.answer("❌ Неправильно!", show_alert=True)
@@ -160,7 +185,7 @@ async def handle_other_messages(message: types.Message, state: FSMContext):
 
 async def main():
     print("🤖 Бот запущен!")
-    await dp.start_polling(bot, skip_updates=True)  # <--- ТУТ ИЗМЕНЕНИЕ
+    await dp.start_polling(bot, skip_updates=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
