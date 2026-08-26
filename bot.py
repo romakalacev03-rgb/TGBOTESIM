@@ -50,7 +50,7 @@ def get_user_state(user_id: int):
             "attempts": 0,
             "blocked_until": None,
             "passed": False,
-            "mode": "ФБХ"  # ФБХ, БХ, Hold
+            "mode": "ФБХ"
         }
         save_user_data(user_data)
     return user_data[user_id_str]
@@ -102,8 +102,16 @@ def get_main_keyboard():
 
 # ===== ИНЛАЙН МЕНЮ =====
 def get_main_menu_keyboard(mode="ФБХ"):
+    # Эмодзи для режимов
+    mode_emoji = {
+        "ФБХ": "⚡️",
+        "БХ": "⏱",
+        "Hold": "⏳"
+    }
+    emoji = mode_emoji.get(mode, "⚡️")
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"⚡️ Режим: {mode}", callback_data="mode_info")],
+        [InlineKeyboardButton(text=f"{emoji} Режим: {mode}", callback_data="mode_info")],
         [InlineKeyboardButton(text="📲 Сдать Esim", callback_data="sell_esim"), 
          InlineKeyboardButton(text="💾 Архив", callback_data="archive")],
         [InlineKeyboardButton(text="⏳ Очередь", callback_data="queue"), 
@@ -136,7 +144,7 @@ def get_mode_keyboard():
 def get_change_mode_keyboard():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⚡️ ФБХ", callback_data="set_mode_fbx"),
-         InlineKeyboardButton(text="⚡️ БХ", callback_data="set_mode_bh")],
+         InlineKeyboardButton(text="⏱ БХ", callback_data="set_mode_bh")],
         [InlineKeyboardButton(text="⏳ Hold", callback_data="set_mode_hold")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="mode_info")]
     ])
@@ -174,7 +182,7 @@ def get_prices(mode):
     
     prices = {}
     for op, base in BASE_PRICES.items():
-        prices[op] = base + extra
+        prices[op] = round(base + extra, 1)
     return prices
 
 # ===== ОБРАБОТЧИК КОМАНДЫ /START =====
@@ -279,13 +287,6 @@ async def show_main_menu(message: types.Message):
     mode = user_state.get("mode", "ФБХ")
     prices = get_prices(mode)
     
-    # Формируем прайс в зависимости от режима
-    price_text = ""
-    for op, price in prices.items():
-        slet = SLET_PRICES[op]
-        price_text += f"🔴 {op} - {price:.1f}$ / слет: {slet:.1f}$\n"
-    
-    # Заменяем эмодзи для каждого оператора
     emoji_map = {
         "MTS": "🔴",
         "T2": "⚫️",
@@ -324,7 +325,6 @@ async def show_main_menu(message: types.Message):
         f"👇 <b>Выберите действие:</b>"
     )
     
-    # Удаляем предыдущее сообщение если оно было
     try:
         await message.delete()
     except:
@@ -431,13 +431,21 @@ async def set_mode(callback: types.CallbackQuery):
     user_state["mode"] = new_mode
     save_user_state(user_id)
     
+    # Показываем сообщение о смене режима
     await callback.message.edit_text(
         f"✅ <b>Режим успешно изменен на: {new_mode}</b>\n\n"
         f"🔄 Возвращаю в главное меню..."
     )
     
     await asyncio.sleep(1)
-    await callback.message.delete()
+    
+    # Удаляем сообщение и показываем обновленное меню
+    try:
+        await callback.message.delete()
+    except:
+        pass
+    
+    # Отправляем новое сообщение с обновленным меню
     await show_main_menu(callback.message)
     await callback.answer()
 
@@ -694,7 +702,6 @@ async def handle_other_messages(message: types.Message):
         await message.answer(f"⛔ Вы заблокированы!\nПопробуйте через <b>{remaining} минут</b>.", reply_markup=get_main_keyboard())
         return
     
-    # Игнорируем любые другие сообщения, не отправляем меню!
     await message.answer(
         "❓ <b>Неизвестная команда</b>\n\n"
         "Используйте кнопки меню для навигации:\n"
