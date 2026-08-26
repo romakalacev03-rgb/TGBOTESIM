@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -27,9 +27,6 @@ logging.basicConfig(level=logging.INFO)
 # ===== СОСТОЯНИЯ FSM =====
 class CaptchaState(StatesGroup):
     waiting_for_captcha = State()
-
-class MenuState(StatesGroup):
-    main_menu = State()
 
 # ===== ХРАНИЛИЩЕ ДАННЫХ ПОЛЬЗОВАТЕЛЕЙ =====
 USER_DATA_FILE = "user_data.json"
@@ -60,7 +57,7 @@ def get_user_state(user_id: int):
 def save_user_state(user_id: int):
     save_user_data(user_data)
 
-# ===== СПИСОК ЭМОДЗИ ПО КАТЕГОРИЯМ =====
+# ===== СПИСОК ЭМОДЗИ ДЛЯ КАПЧИ =====
 EMOJIS = {
     "фрукты": ["🍎", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍒", "🍑", "🥭", "🍍", "🥝"],
     "животные": ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮"],
@@ -89,35 +86,41 @@ def generate_captcha():
     
     return target_emoji, keyboard, category
 
-# ===== МЕНЮ =====
+# ===== БОКОВАЯ ПАНЕЛЬ (Reply Keyboard) =====
+def get_main_keyboard():
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🏠 Вернуться в меню")],
+            [KeyboardButton(text="⏳ Проверить очередь")],
+            [KeyboardButton(text="💸 Баланс")]
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выберите действие..."
+    )
+    return keyboard
+
+# ===== ИНЛАЙН МЕНЮ =====
 def get_main_menu_keyboard():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📱 Сдать eSIM", callback_data="sell_esim")],
-        [InlineKeyboardButton(text="🔄 Режим сдачи: ФБХ", callback_data="change_mode")],
-        [InlineKeyboardButton(text="📊 Актуальная информация", callback_data="info")],
+        [InlineKeyboardButton(text="⚡️ Режим: ФБХ", callback_data="mode_fbx")],
+        [InlineKeyboardButton(text="📲 Сдать Esim", callback_data="sell_esim"), 
+         InlineKeyboardButton(text="💾 Архив", callback_data="archive")],
+        [InlineKeyboardButton(text="⏳ Очередь", callback_data="queue"), 
+         InlineKeyboardButton(text="💸 Баланс", callback_data="balance")],
         [InlineKeyboardButton(text="🆘 Помощь", callback_data="help")]
     ])
     return keyboard
 
 def get_operators_keyboard():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔴 МТС", callback_data="op_mts"), 
-         InlineKeyboardButton(text="🔵 Билайн", callback_data="op_beeline")],
-        [InlineKeyboardButton(text="🟢 Т2", callback_data="op_t2"), 
-         InlineKeyboardButton(text="🟡 МТС WORLD", callback_data="op_mts_world")],
-        [InlineKeyboardButton(text="⚪ Добросовестный", callback_data="op_dobro"), 
-         InlineKeyboardButton(text="🔶 Миранда", callback_data="op_miranda")],
-        [InlineKeyboardButton(text="🔷 Газпром", callback_data="op_gazprom"), 
-         InlineKeyboardButton(text="💳 ТБанк", callback_data="op_tbank")],
-        [InlineKeyboardButton(text="🏦 ВТБ", callback_data="op_vtb")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
-    ])
-    return keyboard
-
-def get_mode_keyboard(current_mode):
-    text = "🔄 ФБХ" if current_mode == "ФБХ" else "🔄 БХ"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=text, callback_data="toggle_mode")],
+        [InlineKeyboardButton(text="🔴 MTS", callback_data="op_mts"), 
+         InlineKeyboardButton(text="⚫️ T2", callback_data="op_t2")],
+        [InlineKeyboardButton(text="🟡 Билайн", callback_data="op_beeline"), 
+         InlineKeyboardButton(text="⚪️ Dobroсвязь", callback_data="op_dobro")],
+        [InlineKeyboardButton(text="🔶 Миранда", callback_data="op_miranda"), 
+         InlineKeyboardButton(text="🔷 Газпром", callback_data="op_gazprom")],
+        [InlineKeyboardButton(text="🟢 Сбер", callback_data="op_sber"), 
+         InlineKeyboardButton(text="🔵 ВТБ", callback_data="op_vtb")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
     ])
     return keyboard
@@ -133,7 +136,8 @@ async def cmd_start(message: types.Message, state: FSMContext):
         remaining = (datetime.fromisoformat(user_state["blocked_until"]) - datetime.now()).seconds // 60
         await message.answer(
             f"⛔ Вы слишком много раз ошиблись!\n"
-            f"Попробуйте снова через <b>{remaining} минут</b>."
+            f"Попробуйте снова через <b>{remaining} минут</b>.",
+            reply_markup=get_main_keyboard()
         )
         return
     
@@ -179,7 +183,7 @@ async def process_captcha(callback: types.CallbackQuery, state: FSMContext):
         user_state["blocked_until"] = None
         save_user_state(user_id)
         await callback.message.delete()
-        await callback.message.answer("✅ <b>Отлично! Капча пройдена!</b>")
+        await callback.message.answer("✅ <b>Отлично! Капча пройдена!</b>", reply_markup=get_main_keyboard())
         await show_main_menu(callback.message)
         await state.clear()
         await callback.answer("✅ Капча пройдена!", show_alert=True)
@@ -219,12 +223,26 @@ async def process_captcha(callback: types.CallbackQuery, state: FSMContext):
 # ===== ГЛАВНОЕ МЕНЮ =====
 async def show_main_menu(message: types.Message):
     text = (
-        "<b>🏠 Главное меню</b>\n\n"
-        "Выберите действие:\n\n"
-        "📱 <b>Сдать eSIM</b> - выбрать оператора\n"
-        "🔄 <b>Режим сдачи: ФБХ</b> - моментальная оплата\n"
-        "📊 <b>Актуальная информация</b> - текущие цены и статус\n"
-        "🆘 <b>Помощь</b> - поддержка"
+        "💲 <b>Добро пожаловать в ESIM PRIME</b> 💲\n\n"
+        "⚡️ <b>Текущая ставка: ФБХ</b>\n"
+        "<i>eSIM оплачивается моментально</i>\n\n"
+        "⚠️ <b>Внимание!</b>\n"
+        "<i>Берем только оплачиваемые eSIM.</i>\n\n"
+        "📊 <b>Текущие цены (ФБХ):</b>\n"
+        "🔴 MTS - 16$ / слет: 3.2$\n"
+        "⚫️ T2 - 18$ / слет: 3.6$\n"
+        "🟡 Билайн - 20$ / слет: 4$\n"
+        "⚪️ Dobroсвязь - 18$ / слет: 3.6$\n"
+        "🔶 Миранда - 19$ / слет: 3.7$\n"
+        "🔷 Газпром - 22$ / слет: 4.2$\n"
+        "🟢 Сбер - 17$ / слет: 3.3$\n"
+        "🔵 ВТБ - 22$ / слет: 4.2$\n\n"
+        "📌 <b>Дополнительные режимы:</b>\n"
+        "• <b>БХ</b> (5 минут) → +3.5$ к каждому оператору\n"
+        "• <b>Hold</b> (30 минут) → +5.5$ к каждому оператору\n\n"
+        "⏳ <b>Очередь:</b> НИЗКАЯ\n"
+        "<i>QR принимаются в течение 5 минут</i>\n\n"
+        "👇 <b>Выберите режим сдачи:</b>"
     )
     await message.answer(text, reply_markup=get_main_menu_keyboard())
 
@@ -234,21 +252,45 @@ async def back_to_menu(callback: types.CallbackQuery):
     await show_main_menu(callback.message)
     await callback.answer()
 
+# ===== РЕЖИМ ФБХ =====
+@dp.callback_query(F.data == "mode_fbx")
+async def mode_fbx(callback: types.CallbackQuery):
+    text = (
+        "⚡️ <b>Режим: ФБХ</b>\n\n"
+        "✅ Моментальная оплата\n"
+        "✅ Без комиссии\n"
+        "✅ Выплата в течение 2-5 минут\n\n"
+        "💰 <b>Текущие цены:</b>\n"
+        "🔴 MTS - 16$ / слет: 3.2$\n"
+        "⚫️ T2 - 18$ / слет: 3.6$\n"
+        "🟡 Билайн - 20$ / слет: 4$\n"
+        "⚪️ Dobroсвязь - 18$ / слет: 3.6$\n"
+        "🔶 Миранда - 19$ / слет: 3.7$\n"
+        "🔷 Газпром - 22$ / слет: 4.2$\n"
+        "🟢 Сбер - 17$ / слет: 3.3$\n"
+        "🔵 ВТБ - 22$ / слет: 4.2$\n\n"
+        "🔄 <i>Для смены режима используйте главное меню</i>"
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
+    ])
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
+
 # ===== СДАТЬ ESIM =====
 @dp.callback_query(F.data == "sell_esim")
 async def sell_esim(callback: types.CallbackQuery):
     text = (
-        "<b>📱 Сдать eSIM</b>\n\n"
+        "📲 <b>Сдать eSIM</b>\n\n"
         "<i>Выберите оператора:</i>\n\n"
-        "🔴 МТС - 15$\n"
-        "🔵 Билайн - 18$\n"
-        "🟢 Т2 - 16$\n"
-        "🟡 МТС WORLD - 29$\n"
-        "⚪ Добросовестный - 18$\n"
-        "🔶 Миранда - 18$\n"
-        "🔷 Газпром - 20$\n"
-        "💳 ТБанк - 18$\n"
-        "🏦 ВТБ - 20$"
+        "🔴 MTS - 16$ (слет: 3.2$)\n"
+        "⚫️ T2 - 18$ (слет: 3.6$)\n"
+        "🟡 Билайн - 20$ (слет: 4$)\n"
+        "⚪️ Dobroсвязь - 18$ (слет: 3.6$)\n"
+        "🔶 Миранда - 19$ (слет: 3.7$)\n"
+        "🔷 Газпром - 22$ (слет: 4.2$)\n"
+        "🟢 Сбер - 17$ (слет: 3.3$)\n"
+        "🔵 ВТБ - 22$ (слет: 4.2$)"
     )
     await callback.message.edit_text(text, reply_markup=get_operators_keyboard())
     await callback.answer()
@@ -257,17 +299,27 @@ async def sell_esim(callback: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("op_"))
 async def select_operator(callback: types.CallbackQuery):
     operator_map = {
-        "op_mts": "МТС",
+        "op_mts": "MTS",
+        "op_t2": "T2",
         "op_beeline": "Билайн",
-        "op_t2": "Т2",
-        "op_mts_world": "МТС WORLD",
-        "op_dobro": "Добросовестный",
+        "op_dobro": "Dobroсвязь",
         "op_miranda": "Миранда",
         "op_gazprom": "Газпром",
-        "op_tbank": "ТБанк",
+        "op_sber": "Сбер",
         "op_vtb": "ВТБ"
     }
     operator = operator_map.get(callback.data, "Неизвестно")
+    
+    prices = {
+        "MTS": "16$",
+        "T2": "18$",
+        "Билайн": "20$",
+        "Dobroсвязь": "18$",
+        "Миранда": "19$",
+        "Газпром": "22$",
+        "Сбер": "17$",
+        "ВТБ": "22$"
+    }
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Подтвердить сдачу", callback_data=f"confirm_{callback.data}")],
@@ -275,9 +327,9 @@ async def select_operator(callback: types.CallbackQuery):
     ])
     
     await callback.message.edit_text(
-        f"<b>📱 Сдать eSIM</b>\n\n"
+        f"📲 <b>Сдать eSIM</b>\n\n"
         f"Оператор: <b>{operator}</b>\n"
-        f"Цена: <b>15$</b>\n\n"
+        f"Цена: <b>{prices.get(operator, '15$')}</b>\n\n"
         f"<i>Для подтверждения нажмите кнопку ниже</i>",
         reply_markup=keyboard
     )
@@ -286,76 +338,71 @@ async def select_operator(callback: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("confirm_"))
 async def confirm_sell(callback: types.CallbackQuery):
     await callback.message.edit_text(
-        "<b>✅ Заявка принята!</b>\n\n"
-        "Ожидайте обработки.\n"
-        "Среднее время ожидания: <b>2-5 минут</b>",
+        "✅ <b>Заявка принята!</b>\n\n"
+        "⏳ Ожидайте обработки.\n"
+        "📊 Среднее время: <b>2-5 минут</b>\n\n"
+        "💬 <i>Уведомление придет автоматически</i>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_menu")]
         ])
     )
     await callback.answer("✅ Заявка отправлена!", show_alert=True)
 
-# ===== РЕЖИМ СДАЧИ =====
-@dp.callback_query(F.data == "change_mode")
-async def change_mode(callback: types.CallbackQuery):
+# ===== АРХИВ =====
+@dp.callback_query(F.data == "archive")
+async def archive(callback: types.CallbackQuery):
     text = (
-        "<b>🔄 Режим сдачи: ФБХ</b>\n\n"
-        "В этом режиме сдача eSIM оплачивается <b>моментально</b>.\n"
-        "В случае слета, мы выплачиваем компенсацию <b>3$</b>.\n\n"
-        "⚠️ <i>Внимание: комиссия за вывод средств отсутствует.</i>\n\n"
-        "<i>Для смены режима нажмите кнопку снизу.</i>"
-    )
-    await callback.message.edit_text(text, reply_markup=get_mode_keyboard("ФБХ"))
-    await callback.answer()
-
-@dp.callback_query(F.data == "toggle_mode")
-async def toggle_mode(callback: types.CallbackQuery):
-    text = (
-        "<b>🔄 Режим сдачи: БХ</b>\n\n"
-        "В этом режиме холда нет, оплата производится даже за 5 минут.\n\n"
-        "<i>Для смены режима нажмите кнопку снизу.</i>"
+        "💾 <b>Архив сданных eSIM</b>\n\n"
+        "📊 <b>Ваша статистика:</b>\n"
+        "• Всего сдано: <b>0</b>\n"
+        "• Ожидается: <b>0</b>\n"
+        "• Завершено: <b>0</b>\n\n"
+        "📅 <b>Последние операции:</b>\n"
+        "<i>Нет операций</i>\n\n"
+        "ℹ️ <i>История появится после первой сдачи</i>"
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 ФБХ", callback_data="toggle_mode_back")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
     ])
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
-@dp.callback_query(F.data == "toggle_mode_back")
-async def toggle_mode_back(callback: types.CallbackQuery):
+# ===== ОЧЕРЕДЬ =====
+@dp.callback_query(F.data == "queue")
+async def queue(callback: types.CallbackQuery):
     text = (
-        "<b>🔄 Режим сдачи: ФБХ</b>\n\n"
-        "В этом режиме сдача eSIM оплачивается <b>моментально</b>.\n"
-        "В случае слета, мы выплачиваем компенсацию <b>3$</b>.\n\n"
-        "⚠️ <i>Внимание: комиссия за вывод средств отсутствует.</i>\n\n"
-        "<i>Для смены режима нажмите кнопку снизу.</i>"
-    )
-    await callback.message.edit_text(text, reply_markup=get_mode_keyboard("ФБХ"))
-    await callback.answer()
-
-# ===== ИНФОРМАЦИЯ =====
-@dp.callback_query(F.data == "info")
-async def show_info(callback: types.CallbackQuery):
-    text = (
-        "<b>📊 Актуальная информация</b>\n\n"
-        "📱 <b>Цены на eSIM:</b>\n"
-        "🔴 МТС - 15$\n"
-        "🔵 Билайн - 18$\n"
-        "🟢 Т2 - 16$\n"
-        "🟡 МТС WORLD - 29$\n"
-        "⚪ Добросовестный - 18$\n"
-        "🔶 Миранда - 18$\n"
-        "🔷 Газпром - 20$\n"
-        "💳 ТБанк - 18$\n"
-        "🏦 ВТБ - 20$\n\n"
+        "⏳ <b>Текущая очередь</b>\n\n"
         "📊 <b>Статистика:</b>\n"
-        "• Всего сдано eSIM: <b>1,247</b>\n"
-        "• Активных пользователей: <b>89</b>\n"
-        "• Среднее время выплаты: <b>3 минуты</b>\n\n"
-        "<i>Данные обновляются в реальном времени</i>"
+        "• В очереди: <b>0</b>\n"
+        "• Ожидают QR: <b>0</b>\n"
+        "• В обработке: <b>0</b>\n\n"
+        "📈 <b>Прогноз:</b>\n"
+        "• Среднее время: <b>2-5 минут</b>\n"
+        "• Очередь: <b>НИЗКАЯ</b>\n\n"
+        "🕒 <i>QR принимаются в течение 5 минут</i>"
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="queue")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
+    ])
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
+
+# ===== БАЛАНС =====
+@dp.callback_query(F.data == "balance")
+async def balance(callback: types.CallbackQuery):
+    text = (
+        "💸 <b>Ваш баланс</b>\n\n"
+        "💰 Баланс: <b>0.00$</b>\n"
+        "🔄 Заблокировано: <b>0.00$</b>\n"
+        "📊 Доступно: <b>0.00$</b>\n\n"
+        "📈 <b>Статистика:</b>\n"
+        "• Всего заработано: <b>0.00$</b>\n"
+        "• Последняя выплата: <b>—</b>\n\n"
+        "💳 <i>Вывод средств доступен от 5$</i>"
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="balance")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
     ])
     await callback.message.edit_text(text, reply_markup=keyboard)
@@ -365,13 +412,17 @@ async def show_info(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "help")
 async def show_help(callback: types.CallbackQuery):
     text = (
-        "<b>🆘 Помощь</b>\n\n"
-        "📱 <b>Как сдать eSIM:</b>\n"
-        "1. Нажмите «Сдать eSIM»\n"
-        "2. Выберите оператора\n"
-        "3. Подтвердите заявку\n"
-        "4. Ожидайте выплату\n\n"
-        "💬 <b>Контакты поддержки:</b>\n"
+        "🆘 <b>Помощь</b>\n\n"
+        "📌 <b>Как сдать eSIM:</b>\n"
+        "1️⃣ Нажмите «📲 Сдать Esim»\n"
+        "2️⃣ Выберите оператора\n"
+        "3️⃣ Подтвердите заявку\n"
+        "4️⃣ Ожидайте выплату\n\n"
+        "⚡️ <b>Режимы сдачи:</b>\n"
+        "• <b>ФБХ</b> — моментальная оплата\n"
+        "• <b>БХ</b> — без холда (5 минут)\n"
+        "• <b>Hold</b> — с холдом (30 минут)\n\n"
+        "📞 <b>Контакты:</b>\n"
         "👤 <a href='https://t.me/erwins_gr_bot'>Поддержка</a>\n"
         "📢 <a href='https://t.me/erwins_gb_bot'>Новости</a>\n\n"
         "⚠️ <i>По всем вопросам обращайтесь в поддержку</i>"
@@ -382,7 +433,81 @@ async def show_help(callback: types.CallbackQuery):
     await callback.message.edit_text(text, reply_markup=keyboard, disable_web_page_preview=True)
     await callback.answer()
 
+# ===== КОМАНДА /CHECK (ОЧЕРЕДЬ) =====
+@dp.message(Command("check"))
+async def cmd_check(message: types.Message):
+    user_id = message.from_user.id
+    user_state = get_user_state(user_id)
+    
+    if not user_state["passed"]:
+        await message.answer("🔐 Сначала пройдите капчу! Напишите /start")
+        return
+    
+    text = (
+        "⏳ <b>Текущая очередь</b>\n\n"
+        "📊 <b>Статистика:</b>\n"
+        "• В очереди: <b>0</b>\n"
+        "• Ожидают QR: <b>0</b>\n"
+        "• В обработке: <b>0</b>\n\n"
+        "📈 <b>Прогноз:</b>\n"
+        "• Среднее время: <b>2-5 минут</b>\n"
+        "• Очередь: <b>НИЗКАЯ</b>"
+    )
+    await message.answer(text, reply_markup=get_main_keyboard())
+
 # ===== ОБЫЧНЫЕ СООБЩЕНИЯ =====
+@dp.message(F.text == "🏠 Вернуться в меню")
+async def back_to_menu_text(message: types.Message):
+    user_id = message.from_user.id
+    user_state = get_user_state(user_id)
+    
+    if not user_state["passed"]:
+        await message.answer("🔐 Сначала пройдите капчу! Напишите /start")
+        return
+    
+    await show_main_menu(message)
+
+@dp.message(F.text == "⏳ Проверить очередь")
+async def check_queue_text(message: types.Message):
+    user_id = message.from_user.id
+    user_state = get_user_state(user_id)
+    
+    if not user_state["passed"]:
+        await message.answer("🔐 Сначала пройдите капчу! Напишите /start")
+        return
+    
+    text = (
+        "⏳ <b>Текущая очередь</b>\n\n"
+        "📊 <b>Статистика:</b>\n"
+        "• В очереди: <b>0</b>\n"
+        "• Ожидают QR: <b>0</b>\n"
+        "• В обработке: <b>0</b>\n\n"
+        "📈 <b>Прогноз:</b>\n"
+        "• Среднее время: <b>2-5 минут</b>\n"
+        "• Очередь: <b>НИЗКАЯ</b>"
+    )
+    await message.answer(text, reply_markup=get_main_keyboard())
+
+@dp.message(F.text == "💸 Баланс")
+async def balance_text(message: types.Message):
+    user_id = message.from_user.id
+    user_state = get_user_state(user_id)
+    
+    if not user_state["passed"]:
+        await message.answer("🔐 Сначала пройдите капчу! Напишите /start")
+        return
+    
+    text = (
+        "💸 <b>Ваш баланс</b>\n\n"
+        "💰 Баланс: <b>0.00$</b>\n"
+        "🔄 Заблокировано: <b>0.00$</b>\n"
+        "📊 Доступно: <b>0.00$</b>\n\n"
+        "📈 <b>Статистика:</b>\n"
+        "• Всего заработано: <b>0.00$</b>\n"
+        "• Последняя выплата: <b>—</b>"
+    )
+    await message.answer(text, reply_markup=get_main_keyboard())
+
 @dp.message()
 async def handle_other_messages(message: types.Message):
     user_id = message.from_user.id
@@ -401,7 +526,7 @@ async def handle_other_messages(message: types.Message):
 
 # ===== ЗАПУСК БОТА =====
 async def main():
-    print("🤖 Бот запущен!")
+    print("🤖 Бот ESIM PRIME запущен!")
     await dp.start_polling(bot, skip_updates=True)
 
 if __name__ == "__main__":
